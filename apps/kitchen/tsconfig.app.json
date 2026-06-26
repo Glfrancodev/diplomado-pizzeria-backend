@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../dist/apps/notifications"
+    "outDir": "../../dist/apps/kitchen"
   },
   "include": ["src/**/*", "../../libs/**/*"],
   "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]

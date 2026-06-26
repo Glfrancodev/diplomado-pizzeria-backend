@@ -18,13 +18,22 @@
         "tsConfigPath": "apps/orders/tsconfig.app.json"
       }
     },
-    "notifications": {
+    "kitchen": {
       "type": "application",
-      "root": "apps/notifications",
+      "root": "apps/kitchen",
       "entryFile": "main",
-      "sourceRoot": "apps/notifications/src",
+      "sourceRoot": "apps/kitchen/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/notifications/tsconfig.app.json"
+        "tsConfigPath": "apps/kitchen/tsconfig.app.json"
+      }
+    },
+    "delivery": {
+      "type": "application",
+      "root": "apps/delivery",
+      "entryFile": "main",
+      "sourceRoot": "apps/delivery/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/delivery/tsconfig.app.json"
       }
     },
     "contracts": {
