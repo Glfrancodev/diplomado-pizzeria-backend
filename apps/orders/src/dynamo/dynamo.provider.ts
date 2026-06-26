@@ -3,15 +3,11 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { Provider } from '@nestjs/common';
 
 /**
- * Provider del cliente DynamoDB para kitchen.
+ * Provider del cliente DynamoDB para orders (mismo patrón que kitchen/delivery).
  *
  * - SIN credenciales en el código: en Fargate las inyecta el IAM task role.
- *   El SDK las toma solo; acá solo pasamos la región.
- * - Usamos DynamoDBDocumentClient (lib-dynamodb): nos deja leer/escribir objetos
- *   JS normales en vez de los tipos crudos de Dynamo ({ S: "..." }, { N: "..." }).
- *
- * `DYNAMO` es el "token": el nombre con el que el service pide este cliente
- * (@Inject(DYNAMO)).
+ * - orders solo toca SU tabla (pizzeria-pedidos); su IAM role no le da acceso a
+ *   ninguna otra. Para datos de comida/repartidores, orders pregunta por NATS.
  */
 export const DYNAMO = 'DYNAMO';
 

@@ -38,6 +38,19 @@ export interface OrderCreatedEvent {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// order.verifying · emite: kitchen → escucha: orders
+// "Recibí el pedido y estoy validando el stock." Se emite al empezar a verificar,
+// antes de decidir preparing o rejected (el front ve "Verificando").
+// ───────────────────────────────────────────────────────────────────────────
+export const ORDER_VERIFYING = 'order.verifying';
+
+export interface OrderVerifyingEvent {
+  pedidoId: string;
+  estado: Extract<EstadoPedido, 'verifying'>; // siempre "verifying"
+  startedAt: string; // ISO timestamp
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // order.preparing · emite: kitchen → escucha: orders
 // "Hay stock, ya estoy preparando." (orders lo persiste para que el front vea
 // "Preparándose" sin esperar a que termine.)

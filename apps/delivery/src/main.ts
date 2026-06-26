@@ -1,3 +1,4 @@
+import 'dotenv/config'; // carga .env en local (en ECS no hay .env: no hace nada)
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';

@@ -13,15 +13,21 @@
 
 // ───────────────────────────────────────────────────────────────────────────
 // Estados de un pedido (la "máquina de estados" por la que pasa)
-//   pending → preparing → ready → (searching_delivery) → on_the_way → delivered
+//   pending → verifying → preparing → ready → (searching_delivery) → on_the_way → delivered
 //                       ↘ rejected (si kitchen no tiene stock)
 // Usar un union de strings (en vez de string suelto) hace que el compilador
 // nos avise si escribimos mal un estado.
+//   verifying          = kitchen recibió el pedido y está validando el stock.
 //   searching_delivery = no había repartidor libre; el pedido espera en cola.
 //   on_the_way         = delivery asignó un repartidor y está "viajando" (simulado).
+//
+// Tiempos (para que el frontend, que hace polling cada 2s, vea cada estado):
+//   - mínimo 4s entre estados "instantáneos".
+//   - los estados que simulan trabajo (preparing, on_the_way) duran ~10s.
 // ───────────────────────────────────────────────────────────────────────────
 export type EstadoPedido =
   | 'pending'
+  | 'verifying'
   | 'preparing'
   | 'ready'
   | 'rejected'

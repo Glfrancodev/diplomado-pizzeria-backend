@@ -1,13 +1,12 @@
 # ============================================================
-#  Infraestructura como Código (IaC) — desarrollo local
-# ------------------------------------------------------------
-#  Este archivo describe declarativamente la infra que necesitan
-#  nuestros microservicios para correr local:
-#    - NATS  → broker de mensajería entre los servicios
-#    - Redis → persistencia de órdenes (escrito por orders)
+#  Infra LOCAL para desarrollo (NO es la de AWS).
+#  Levanta lo que los servicios necesitan para correr en tu PC:
+#    - nats            → broker de mensajería entre los 3 servicios
+#    - dynamodb-local  → DynamoDB "de mentira" en localhost:8000 (sin AWS)
+#    - dynamodb-admin  → UI web para ver/editar las tablas (http://localhost:8001)
 #
-#  Las apps (orders, notifications) corren en tu host con
-#  `npm run start:*` para tener hot-reload.
+#  Los 3 servicios (orders, kitchen, delivery) corren en tu host con
+#  `npm run start:*` (hot-reload), leyendo el archivo .env (ver .env.example).
 # ============================================================
 
 services:
@@ -15,33 +14,30 @@ services:
     image: nats:2.10-alpine
     container_name: nats-broker
     restart: unless-stopped
+    command: ["-js", "-m", "8222"]
     ports:
-      - "4222:4222"   # Puerto de clientes (lo usan orders y notifications)
-      - "8222:8222"   # Endpoint HTTP de monitoreo (http://localhost:8222)
-    command:
-      - "-js"                 # Habilita JetStream (no lo usamos, pero queda listo)
-      - "-m"                  # Habilita el endpoint de monitoreo
-      - "8222"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8222/healthz"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      - "4222:4222" # clientes (orders/kitchen/delivery)
+      - "8222:8222" # monitoreo (http://localhost:8222)
 
-  redis:
-    image: redis:7-alpine
-    container_name: redis
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
     restart: unless-stopped
+    # -sharedDb: una sola base para todas las credenciales/regiones (simple para dev).
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      - "8000:8000"
 
-volumes:
-  redis_data:
+  dynamodb-admin:
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: dynamodb-admin
+    restart: unless-stopped
+    environment:
+      DYNAMO_ENDPOINT: http://dynamodb-local:8000
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+    ports:
+      - "8001:8001"
+    depends_on:
+      - dynamodb-local

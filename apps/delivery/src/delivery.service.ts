@@ -21,6 +21,11 @@ import {
 } from '@app/contracts';
 import { DYNAMO } from './dynamo/dynamo.provider';
 
+/** Mínimo que debe verse un estado "instantáneo" antes de pasar al siguiente. */
+const ESPERA_ESTADO = 4000;
+/** Duración del "viaje" simulado (estado on_the_way). */
+const TIEMPO_VIAJE = 10000;
+
 /**
  * Lógica de delivery. Dueña de la tabla pizzeria-repartidores (DynamoDB).
  *
@@ -78,6 +83,8 @@ export class DeliveryService {
    */
   async handleOrderReady(event: OrderReadyEvent): Promise<void> {
     this.logger.log(`order.ready recibido: ${event.pedidoId}`);
+    // Deja ver "ready" un mínimo antes de saltar a on_the_way / searching_delivery.
+    await this.sleep(ESPERA_ESTADO);
     await this.intentarAsignar(event);
   }
 
@@ -112,7 +119,7 @@ export class DeliveryService {
     this.emitirOnTheWay(pedidoId, repartidorId);
     this.logger.log(`Pedido ${pedidoId} en camino con ${repartidorId}`);
 
-    await this.sleep(5000); // "simula" el viaje: no maneja nada real
+    await this.sleep(TIEMPO_VIAJE); // "simula" el viaje: no maneja nada real
 
     await this.liberar(repartidorId);
     this.emitirDelivered(pedidoId, repartidorId);

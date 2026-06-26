@@ -15,14 +15,21 @@ import {
   IngredientsCreateRequest,
   OrderCreatedEvent,
   NATS_SERVICE,
+  ORDER_VERIFYING,
   ORDER_PREPARING,
   ORDER_READY,
   ORDER_REJECTED,
+  OrderVerifyingEvent,
   OrderPreparingEvent,
   OrderReadyEvent,
   OrderRejectedEvent,
 } from '@app/contracts';
 import { DYNAMO } from './dynamo/dynamo.provider';
+
+/** Mínimo que debe verse un estado "instantáneo" antes de pasar al siguiente. */
+const ESPERA_ESTADO = 4000;
+/** Duración de la "preparación" simulada (estado preparing). */
+const TIEMPO_PREPARACION = 10000;
 
 /**
  * Lógica de kitchen. Dueña de las tablas pizzeria-productos y
@@ -130,25 +137,35 @@ export class KitchenService {
   /**
    * order.created → kitchen valida el pedido contra el stock.
    *
+   * Con pausas para que el frontend (polling cada 2s) vea cada estado:
+   *   pending → (4s) → verifying → (4s) → preparing → (10s) → ready
+   *                                     ↘ rejected
+   *
    * Pasos:
-   *   1. Calcula el consumo total: por cada línea expande la receta del producto
-   *      × cantidad, y suma 1 por cada extra (también × cantidad). Acumula todo
-   *      en un mapa { ingredienteId → cantidad necesaria } para todo el pedido.
-   *   2. Compara cada ingrediente necesario contra su stock. Si falta alguno →
-   *      emite order.rejected y corta (NO descuenta nada).
-   *   3. Si alcanza todo → emite order.preparing (el front ve "Preparándose"),
-   *      descuenta el stock, "simula" la preparación (sleep) y emite order.ready.
+   *   1. Espera un mínimo (deja ver "pending") y emite verifying.
+   *   2. Calcula el consumo total: por cada línea expande la receta × cantidad,
+   *      + 1 por cada extra (× cantidad), en un mapa { ingredienteId → cantidad }.
+   *      Chequea existencia y stock; guarda el motivo si algo falla.
+   *   3. Tras un mínimo (deja ver "verifying"): si hubo motivo → order.rejected.
+   *   4. Si alcanza → order.preparing, descuenta stock, "simula" la preparación
+   *      (~10s) y emite order.ready.
    */
   async handleOrderCreated(event: OrderCreatedEvent): Promise<void> {
     const { pedidoId, lineas } = event;
     this.logger.log(`order.created recibido: ${pedidoId}`);
 
-    // 1. Consumo total del pedido { ingredienteId → cantidad necesaria }.
+    // 1. Dejar ver "pending" un mínimo y pasar a "verifying".
+    await this.sleep(ESPERA_ESTADO);
+    this.emitirVerifying(pedidoId);
+
+    // 2. Verificar: consumo total + existencia + stock (guardando el motivo).
     const consumo = new Map<string, number>();
+    let motivo: string | undefined;
     for (const linea of lineas) {
       const producto = await this.buscarProducto(linea.productoId);
       if (!producto) {
-        return this.rechazar(pedidoId, `Producto ${linea.productoId} no existe`);
+        motivo = `Producto ${linea.productoId} no existe`;
+        break;
       }
       // Receta base × cantidad de la línea.
       for (const item of producto.receta) {
@@ -159,21 +176,28 @@ export class KitchenService {
         this.acumular(consumo, extraId, linea.cantidad);
       }
     }
-
-    // 2. ¿Alcanza el stock para TODO el pedido?
-    for (const [ingredienteId, necesario] of consumo) {
-      const ingrediente = await this.buscarIngrediente(ingredienteId);
-      if (!ingrediente || ingrediente.cantidadDisponible < necesario) {
-        return this.rechazar(pedidoId, `Sin stock de ${ingredienteId}`);
+    if (!motivo) {
+      for (const [ingredienteId, necesario] of consumo) {
+        const ingrediente = await this.buscarIngrediente(ingredienteId);
+        if (!ingrediente || ingrediente.cantidadDisponible < necesario) {
+          motivo = `Sin stock de ${ingredienteId}`;
+          break;
+        }
       }
     }
 
-    // 3. Aceptado: avisar que empezamos, descontar, simular y avisar que está listo.
+    // 3. Dejar ver "verifying" un mínimo; si algo falló, rechazar.
+    await this.sleep(ESPERA_ESTADO);
+    if (motivo) {
+      return this.rechazar(pedidoId, motivo);
+    }
+
+    // 4. Aceptado: preparing → descontar → simular (~10s) → ready.
     this.emitirPreparing(pedidoId);
     for (const [ingredienteId, necesario] of consumo) {
       await this.descontarStock(ingredienteId, necesario);
     }
-    await this.sleep(3000); // "simula" la preparación: no cocina nada real
+    await this.sleep(TIEMPO_PREPARACION); // "simula" la preparación: no cocina nada real
     this.emitirReady(pedidoId);
     this.logger.log(`Pedido ${pedidoId} listo (order.ready)`);
   }
@@ -215,6 +239,15 @@ export class KitchenService {
       reason,
     };
     this.nats.emit(ORDER_REJECTED, payload);
+  }
+
+  private emitirVerifying(pedidoId: string): void {
+    const payload: OrderVerifyingEvent = {
+      pedidoId,
+      estado: 'verifying',
+      startedAt: new Date().toISOString(),
+    };
+    this.nats.emit(ORDER_VERIFYING, payload);
   }
 
   private emitirPreparing(pedidoId: string): void {

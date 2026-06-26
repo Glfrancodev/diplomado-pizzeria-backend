@@ -1,0 +1,113 @@
+name: Deploy backend to ECS
+
+# Se dispara al hacer push a main, o manualmente desde la pestaña Actions.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Variables comunes. Los SECRETS se cargan en GitHub (ver docs/CICD-SETUP.md).
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  SERVICES: orders kitchen delivery
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # STAGE 1 — CI: instalar y compilar los 3 servicios (puerta de calidad).
+  # Si esto falla, no se construye ni despliega nada.
+  # ──────────────────────────────────────────────────────────────────────────
+  ci:
+    name: CI · build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build (orders, kitchen, delivery)
+        run: |
+          npm run build:orders
+          npm run build:kitchen
+          npm run build:delivery
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # STAGE 2 — Build & push: una imagen Docker por servicio → ECR.
+  # Corre en paralelo (matrix) para los 3 servicios. Necesita que CI haya pasado.
+  # ──────────────────────────────────────────────────────────────────────────
+  build-push:
+    name: Build & push · ${{ matrix.service }}
+    needs: ci
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [orders, kitchen, delivery]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/pizzeria/${{ matrix.service }}:latest"
+          echo "Building $IMAGE"
+          docker build --platform linux/amd64 \
+            -f apps/${{ matrix.service }}/Dockerfile \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # STAGE 3 — Deploy: forzar a ECS a tomar las imágenes nuevas y esperar a que
+  # quede estable. Necesita que las 3 imágenes estén pusheadas.
+  # ──────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to ECS
+    needs: build-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Force new deployment (orders, kitchen, delivery)
+        run: |
+          for svc in $SERVICES; do
+            aws ecs update-service \
+              --cluster "${{ secrets.ECS_CLUSTER }}" \
+              --service "$svc" \
+              --force-new-deployment >/dev/null
+            echo "redeploy lanzado: $svc"
+          done
+
+      - name: Wait for services to be stable
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${{ secrets.ECS_CLUSTER }}" \
+            --services $SERVICES
+          echo "Servicios estables ✅"
