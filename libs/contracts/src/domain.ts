@@ -13,16 +13,20 @@
 
 // ───────────────────────────────────────────────────────────────────────────
 // Estados de un pedido (la "máquina de estados" por la que pasa)
-//   pending → preparing → ready → delivered
+//   pending → preparing → ready → (searching_delivery) → on_the_way → delivered
 //                       ↘ rejected (si kitchen no tiene stock)
 // Usar un union de strings (en vez de string suelto) hace que el compilador
 // nos avise si escribimos mal un estado.
+//   searching_delivery = no había repartidor libre; el pedido espera en cola.
+//   on_the_way         = delivery asignó un repartidor y está "viajando" (simulado).
 // ───────────────────────────────────────────────────────────────────────────
 export type EstadoPedido =
   | 'pending'
   | 'preparing'
   | 'ready'
   | 'rejected'
+  | 'searching_delivery'
+  | 'on_the_way'
   | 'delivered';
 
 export type EstadoRepartidor = 'disponible' | 'ocupado';

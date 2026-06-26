@@ -75,6 +75,34 @@ export interface OrderRejectedEvent {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// order.searching_delivery · emite: delivery → escucha: orders
+// "No había repartidor libre; el pedido quedó en cola esperando uno." delivery
+// lo emite al encolar; cuando se libere un repartidor lo tomará de la cola y
+// pasará a on_the_way.
+// ───────────────────────────────────────────────────────────────────────────
+export const ORDER_SEARCHING_DELIVERY = 'order.searching_delivery';
+
+export interface OrderSearchingDeliveryEvent {
+  pedidoId: string;
+  estado: Extract<EstadoPedido, 'searching_delivery'>; // siempre "searching_delivery"
+  since: string; // ISO timestamp en que entró a la cola
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// order.on_the_way · emite: delivery → escucha: orders
+// "Repartidor asignado, pedido en camino." delivery lo emite al empezar el viaje
+// (antes del sleep), así el front ve "En camino" mientras se simula la entrega.
+// ───────────────────────────────────────────────────────────────────────────
+export const ORDER_ON_THE_WAY = 'order.on_the_way';
+
+export interface OrderOnTheWayEvent {
+  pedidoId: string;
+  estado: Extract<EstadoPedido, 'on_the_way'>; // siempre "on_the_way"
+  repartidor: string; // repartidorId asignado
+  startedAt: string; // ISO timestamp
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // order.delivered · emite: delivery → escucha: orders
 // "Pedido entregado." delivery NO escribe en la tabla pedidos: avisa por evento
 // y orders persiste el estado final (un solo escritor por tabla).
