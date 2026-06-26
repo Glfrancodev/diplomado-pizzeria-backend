@@ -1,0 +1,52 @@
+# Compose de producción local: stack completo dockerizado.
+# Construye las imágenes de orders/notifications y las corre junto a
+# NATS y Redis. Sirve para validar los Dockerfiles antes de subir a ECR.
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats-broker
+    restart: unless-stopped
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  orders:
+    build:
+      context: .
+      dockerfile: apps/orders/Dockerfile
+    container_name: orders
+    restart: unless-stopped
+    environment:
+      NATS_URL: nats://nats:4222
+      REDIS_URL: redis://redis:6379
+      ORDERS_HTTP_PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nats
+      - redis
+
+  notifications:
+    build:
+      context: .
+      dockerfile: apps/notifications/Dockerfile
+    container_name: notifications
+    restart: unless-stopped
+    environment:
+      NATS_URL: nats://nats:4222
+    depends_on:
+      - nats
+
+volumes:
+  redis_data:

@@ -1,0 +1,47 @@
+# ============================================================
+#  Infraestructura como Código (IaC) — desarrollo local
+# ------------------------------------------------------------
+#  Este archivo describe declarativamente la infra que necesitan
+#  nuestros microservicios para correr local:
+#    - NATS  → broker de mensajería entre los servicios
+#    - Redis → persistencia de órdenes (escrito por orders)
+#
+#  Las apps (orders, notifications) corren en tu host con
+#  `npm run start:*` para tener hot-reload.
+# ============================================================
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats-broker
+    restart: unless-stopped
+    ports:
+      - "4222:4222"   # Puerto de clientes (lo usan orders y notifications)
+      - "8222:8222"   # Endpoint HTTP de monitoreo (http://localhost:8222)
+    command:
+      - "-js"                 # Habilita JetStream (no lo usamos, pero queda listo)
+      - "-m"                  # Habilita el endpoint de monitoreo
+      - "8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis_data:

@@ -1,0 +1,7 @@
+# Copiar a `terraform.tfvars` y completar.
+# terraform.tfvars está en .gitignore.
+
+aws_region = "us-east-1"
+
+access_key = "AKIA...REEMPLAZAR..."
+secret_key = "...REEMPLAZAR..."
