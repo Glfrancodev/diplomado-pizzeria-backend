@@ -16,8 +16,11 @@ import { DEFAULT_NATS_URL } from '@app/contracts';
 async function bootstrap() {
   const app = await NestFactory.create(OrdersModule);
 
-  // CORS: el frontend (React) corre en otro origen y necesita poder llamar a la API.
-  app.enableCors();
+  // CORS: el frontend corre en otro dominio (S3/CloudFront) y necesita llamar a la API.
+  // El origen permitido NO se hardcodea: llega por env var FRONTEND_URL, que la infra
+  // (task definition de ECS) inyecta con la URL real del frontend (ej: https://app.galflabs.tech).
+  // En local, si FRONTEND_URL no está, se cae a '*' (acepta cualquier origen mientras se desarrolla).
+  app.enableCors({ origin: process.env.FRONTEND_URL ?? '*' });
 
   // Escucha de eventos NATS (los @EventPattern de orders, que vienen en 6b).
   app.connectMicroservice<MicroserviceOptions>({

@@ -1,8 +1,16 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom } from 'rxjs';
 import { randomUUID } from 'crypto';
 import {
+  DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
@@ -178,6 +186,51 @@ export class OrdersService implements OnModuleInit {
     this.nats.emit(ORDER_CREATED, event);
 
     return pedido;
+  }
+
+  /**
+   * DELETE /orders/:id → cancela (elimina) un pedido.
+   *
+   * Regla de negocio del enunciado: SOLO se puede cancelar si está en 'pending'.
+   * Si ya pasó a verifying/preparing/etc., el pedido está en proceso → 409 Conflict.
+   *
+   * El borrado usa un DeleteCommand con ConditionExpression para que sea ATÓMICO:
+   * si entre que leemos el pedido y lo borramos kitchen cambió el estado (carrera),
+   * la condición falla y no se borra. Así nunca cancelamos un pedido que justo
+   * entró en cocina.
+   */
+  async cancelOrder(pedidoId: string): Promise<void> {
+    const pedido = await this.findOrder(pedidoId);
+    if (!pedido) {
+      throw new NotFoundException(`Pedido ${pedidoId} no encontrado`);
+    }
+    if (pedido.estado !== 'pending') {
+      throw new ConflictException(
+        `El pedido ${pedidoId} no se puede cancelar: estado actual '${pedido.estado}' (solo se cancela si está 'pending').`,
+      );
+    }
+
+    try {
+      await this.dynamo.send(
+        new DeleteCommand({
+          TableName: this.tablaPedidos,
+          Key: { pedidoId },
+          // Guarda atómica: solo borra si sigue en 'pending' al momento del borrado.
+          ConditionExpression: 'estado = :p',
+          ExpressionAttributeValues: { ':p': 'pending' },
+        }),
+      );
+    } catch (err) {
+      // Si la condición falló, el estado cambió entre el read y el delete.
+      if ((err as { name?: string }).name === 'ConditionalCheckFailedException') {
+        throw new ConflictException(
+          `El pedido ${pedidoId} cambió de estado y ya no se puede cancelar.`,
+        );
+      }
+      throw err;
+    }
+
+    this.logger.log(`Pedido ${pedidoId} cancelado (DELETE)`);
   }
 
   // ─── PERSISTENCIA DE ESTADOS (orders = único escritor de pedidos) ─────────────

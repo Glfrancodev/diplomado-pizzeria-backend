@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -42,5 +43,16 @@ export class OrdersController {
       throw new NotFoundException(`Pedido ${id} no encontrado`);
     }
     return pedido;
+  }
+
+  /**
+   * DELETE /orders/:id → cancela el pedido.
+   * Solo funciona si el estado es 'pending'; si no, el service lanza 409 Conflict.
+   * (El frontend solo muestra el botón de cancelar cuando el estado es 'pending'.)
+   */
+  @Delete(':id')
+  async cancel(@Param('id') id: string) {
+    await this.ordersService.cancelOrder(id);
+    return { status: 'cancelled', pedidoId: id };
   }
 }
